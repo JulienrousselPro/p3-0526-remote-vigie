@@ -10,12 +10,18 @@ services:
     build:
       context: ..
       dockerfile: nas/Dockerfile
+      # Le DNS du NAS (systemd-resolved, 127.0.0.53) n'est pas joignable depuis les conteneurs :
+      # le build (npm ci) passe par le réseau de l'hôte pour résoudre registry.npmjs.org.
+      network: host
+      entitlements: [network.host]
       args:
         VITE_PUBLIC_URL: ${PUBLIC_URL}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+    # DNS explicite (voir le commentaire du build) : Gmail, Google, Météo-France, BAN…
+    dns: [1.1.1.1, 9.9.9.9]
     ports:
       # Accès local seulement (réseau de la maison) : http://192.168.1.200:3310
       # Ne JAMAIS rediriger ce port depuis la Freebox.
@@ -94,6 +100,7 @@ services:
     restart: unless-stopped
     depends_on:
       - web
+    dns: [1.1.1.1, 9.9.9.9]
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_STATE_DIR: /var/lib/tailscale
