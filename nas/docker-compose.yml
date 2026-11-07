@@ -1,21 +1,16 @@
 # Stack Vigie pour le NAS — isolée des autres stacks (Immich, Paperless, IPTV…).
 # Accès public par Tailscale Funnel : AUCUN port à ouvrir sur la Freebox.
-# Lancement depuis ce dossier :  docker compose up -d --build
+# Lancement depuis ce dossier :  sh build.sh  puis  docker compose up -d
 # Les variables ${...} viennent du fichier .env placé à côté (modèle : .env.example).
 # Guide complet : DEPLOIEMENT.md
 name: vigie
 
 services:
   web:
-    build:
-      context: ..
-      dockerfile: nas/Dockerfile
-      # Le DNS du NAS (systemd-resolved, 127.0.0.53) n'est pas joignable depuis les conteneurs :
-      # le build (npm ci) passe par le réseau de l'hôte pour résoudre registry.npmjs.org.
-      network: host
-      entitlements: [network.host]
-      args:
-        VITE_PUBLIC_URL: ${PUBLIC_URL}
+    # Image construite par ./build.sh (docker build --network host : le DNS du NAS,
+    # systemd-resolved en 127.0.0.53, n'est pas joignable depuis les conteneurs de build).
+    image: vigie-web
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       db:

@@ -6,7 +6,8 @@
 FROM node:20-alpine
 
 # libc6-compat : compatibilité de certains paquets natifs (argon2, sharp) sur Alpine
-RUN apk add --no-cache libc6-compat
+# python3, make, g++ : argon2 n'a pas de binaire précompilé pour Alpine, npm le compile
+RUN apk add --no-cache libc6-compat python3 make g++
 
 WORKDIR /usr/src/app
 
