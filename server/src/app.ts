@@ -5,6 +5,13 @@ import express from "express";
 
 const app = express();
 
+// Derrière un reverse proxy (Tailscale sur le NAS), req.ip doit venir de l'en-tête
+// X-Forwarded-For : sinon tous les visiteurs partagent la même IP et les limites
+// par IP (inscription, recherche d'adresse) deviennent globales.
+if (process.env.TRUST_PROXY != null) {
+	app.set("trust proxy", Number(process.env.TRUST_PROXY));
+}
+
 // Configure it
 
 /* ************************************************************************* */

@@ -1,0 +1,15 @@
+# Utilisé à la place du .dockerignore racine (BuildKit : <Dockerfile>.dockerignore).
+# Le .dockerignore racine ne protège que ./.env ; ici on exclut AUSSI client/.env et
+# server/.env (secrets Google, SMTP, etc.) pour qu'ils ne finissent jamais dans l'image.
+**/.env
+**/.env.*
+!**/.env.sample
+**/node_modules
+**/dist
+.git
+.github
+server/uploads
+nas
+docs
+*.md
+!README.md

@@ -1,0 +1,120 @@
+# Stack Vigie pour le NAS — isolée des autres stacks (Immich, Paperless, IPTV…).
+# Accès public par Tailscale Funnel : AUCUN port à ouvrir sur la Freebox.
+# Lancement depuis ce dossier :  docker compose up -d --build
+# Les variables ${...} viennent du fichier .env placé à côté (modèle : .env.example).
+# Guide complet : DEPLOIEMENT.md
+name: vigie
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: nas/Dockerfile
+      args:
+        VITE_PUBLIC_URL: ${PUBLIC_URL}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Accès local seulement (réseau de la maison) : http://192.168.1.200:3310
+      # Ne JAMAIS rediriger ce port depuis la Freebox.
+      - "${WEB_PORT:-3310}:3310"
+    environment:
+      NODE_ENV: production
+      APP_PORT: 3310
+      APP_SECRET: ${APP_SECRET:?APP_SECRET manquant dans .env}
+      # Derrière Tailscale : l'IP du visiteur est lue dans X-Forwarded-For (limites par IP)
+      TRUST_PROXY: 1
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      CLIENT_URL: ${PUBLIC_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${PUBLIC_URL}/api/auth/google/callback
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      METEO_API_KEY: ${METEO_API_KEY:-}
+    volumes:
+      # Seul dossier persistant : les photos. Aucun accès au pool ni au partage « Média ».
+      - uploads:/usr/src/app/server/uploads
+    # Isolation : pas de root (USER node dans le Dockerfile), aucune capacité Linux,
+    # pas d'escalade de privilèges, ressources plafonnées pour ne pas gêner les autres stacks.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3310/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - vigie
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD manquant dans .env}
+      # Crée la base et donne à DB_USER tous les droits sur CETTE base uniquement
+      # (suffisant pour db:migrate, qui supprime puis recrée cette base).
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD manquant dans .env}
+    volumes:
+      - db-data:/var/lib/mysql
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$$MYSQL_USER -p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    # Pas de "ports:" : MySQL n'est joignable que depuis le réseau "vigie".
+    networks:
+      - vigie
+
+  # Tunnel SORTANT vers Tailscale : publie https://vigie.<tailnet>.ts.net sans ouvrir de port.
+  # Il ne relaie que le conteneur "web" (voir tailscale/serve.json).
+  tailscale:
+    image: tailscale/tailscale:stable
+    hostname: vigie
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      # Mode « espace utilisateur » : pas besoin de /dev/net/tun ni de droits réseau sur le NAS
+      TS_USERSPACE: "true"
+      # Ne se connecte avec la clé qu'au premier démarrage (ensuite : état dans ts-state)
+      TS_AUTH_ONCE: "true"
+      TS_EXTRA_ARGS: --advertise-tags=tag:vigie
+    volumes:
+      - ts-state:/var/lib/tailscale
+      - ./tailscale:/config:ro
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    networks:
+      - vigie
+
+networks:
+  vigie:
+
+volumes:
+  db-data:
+  uploads:
+  ts-state:
